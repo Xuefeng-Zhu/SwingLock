@@ -1,0 +1,32 @@
+{
+  "strategy": "Breakout Momentum",
+  "description": "20d high breakout + volume confirmation + RS vs QQQ + SPY regime filter",
+  "params": {
+    "MAX_RISK_PCT": 0.005,
+    "MAX_POSITIONS": 5,
+    "MAX_SINGLE_POS_PCT": 0.05,
+    "HOLD_DAYS_MAX": 12,
+    "BREAKOUT_LOOKBACK": 20,
+    "VOL_MULTIPLIER": 1.5,
+    "STOP_ATR_MULT": 1.5,
+    "TARGET_R_MULT": 2.5,
+    "MAX_DAY_GAIN_SKIP": 0.08,
+    "tickers": [
+      "NVDA",
+      "MSFT",
+      "AAPL",
+      "AMZN",
+      "GOOGL",
+      "META",
+      "TSLA"
+    ],
+    "start": "2019-01-31",
+    "end": "2024-12-05"
+  },
+  "stats": {},
+  "benchmark": {
+    "symbol": "QQQ",
+    "total_return": 2.3291,
+    "final_value": 332909.35
+  }
+}

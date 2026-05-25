@@ -1,0 +1,1 @@
+trade_id,date,ticker,setup,entry_price,stop_price,target_price,shares,position_dollar,planned_risk_dollar,exit_date,exit_price,PnL_dollar,R_multiple,rule_followed,mistake,notes,market_regime,VIX_level
