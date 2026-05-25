@@ -37,6 +37,7 @@ class SwingStrategy(Strategy):
     def init(self):
         # Indicator warmup check
         self.signal_ready = False
+        self._entry_bar = None  # will be set on first entry
 
     @property
     def entry_price(self):
@@ -80,11 +81,8 @@ class SwingStrategy(Strategy):
                 self.position.close()
                 return
 
-            # Stop loss
-            stop = self.position.stop_loss
-            if stop and self.data.Low[bar] <= stop:
-                self.position.close()
-                return
+            # Stop-loss is handled automatically by backtesting.py (sl= in buy())
+            # No manual check needed
 
         # ── Entry ────────────────────────────────────────────────
         if entry_ready and not self.position and pos_count < self.max_positions:
@@ -103,9 +101,6 @@ class SwingStrategy(Strategy):
             self.buy(size=shares,
                      sl=stop_price,
                      tp=self.data.Close[bar] + 2.5 * dist)
-
-        # Store entry bar for time tracking
-        if self.position and not hasattr(self, "_entry_bar"):
             self._entry_bar = bar
 
 
@@ -123,7 +118,7 @@ def run_backtest(data_dir, ticker, start, end, capital):
 
     bt = Backtest(df, SwingStrategy, cash=capital, commission=0.0,
                   margin=1.0, hedging=False, exclusive_orders=True)
-    stats, heatmap = bt.run()
+    stats = bt.run()
     return stats
 
 

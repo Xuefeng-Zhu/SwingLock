@@ -63,8 +63,10 @@ def build_signals(data, trend_on=True):
         vol_sma  = df["vol_sma20"]
         atr14    = df["atr14"]
 
-        # Trend filter (SPY)
-        spy_trend = (close > df["sma200"]) if trend_on else pd.Series(True, index=close.index)
+        # Trend filter — use SPY data to determine market regime
+        spy_close = spy_df["close"]
+        spy_sma   = spy_df["sma200"]
+        spy_trend = spy_close > spy_sma  # Series aligned on same index
 
         # Breakout + volume
         breakout = breakout_20d_signal(close, high, high20, volume, vol_sma)
@@ -82,90 +84,123 @@ def build_signals(data, trend_on=True):
 def run_backtest(data, signals, capital=CAPITAL):
     """
     Vectorbt portfolio backtest.
-    Returns (portfolio, trades_log) where trades_log is a list of dicts.
+    Returns (trades_df, equity_curve_df) where equity_curve_df has daily portfolio value.
     """
-    from vectorbt.portfolio.enums import SizeType
+    # ── Portfolio-level day-by-day tracker ─────────────────────────────────────
+    # We'll walk every calendar date across all tickers, maintain open positions,
+    # mark-to-market daily, and record equity after each event.
+    import pandas as pd
 
-    # Build order records
-    records = []
+    # Collect all unique dates across all tickers
+    all_dates = sorted(set().union(*[df.index for df in data.values()]))
+    all_dates = [d for d in all_dates if d.year >= 2019]
 
-    # Simple custom event loop — we use vbt only for stats
-    for ticker, sig in signals.items():
-        df = data[ticker].copy()
-        close = df["close"]
-        atr14 = df["atr14"].fillna(0)
-        sma200 = df["sma200"]
-        high20 = df["high20"]
-        vol_sma = df["vol_sma20"]
+    # Open positions: {ticker: {entry_date, entry_price, shares, stop_price, days_held}}
+    open_pos = {}   # ticker -> position dict
+    portfolio_equity = capital
+    peak_equity = capital
 
-        in_pos = False
-        entry_date = None
-        entry_price = 0.0
-        stop_price = 0.0
-        shares = 0
-        days_held = 0
+    records = []   # trade log
+    equity_log = []  # daily equity marks
 
-        for i, (date, row) in enumerate(df.iterrows()):
-            if i < 225:  # need SMA200 + ATR warmup
-                continue
+    def close_pos(ticker, date, price, reason, records):
+        nonlocal portfolio_equity, peak_equity
+        pos = open_pos[ticker]
+        pnl = (price - pos["entry_price"]) * pos["shares"]
+        portfolio_equity += pnl
+        peak_equity = max(peak_equity, portfolio_equity)
+        records.append({
+            "ticker": ticker, "date": str(date.date()),
+            "action": "exit", "price": price,
+            "shares": pos["shares"], "pnl": round(pnl, 2),
+            "reason": reason, "equity_after": round(portfolio_equity, 2)
+        })
+        del open_pos[ticker]
 
-            if pd.isna(sma200.iloc[i]) or pd.isna(atr14.iloc[i]) or atr14.iloc[i] == 0:
-                continue
+    # Walk each date
+    for date in all_dates:
+        # ── Mark-to-market open positions ───────────────────────────────────
+        for ticker, pos in list(open_pos.items()):
+            if ticker in data and date in data[ticker].index:
+                close_price = data[ticker]["close"].loc[date]
+                # Stop-loss check
+                if close_price <= pos["stop_price"]:
+                    close_pos(ticker, date, close_price, "stop", records)
+                    continue
+                # Time-exit check
+                pos["days_held"] += 1
+                if pos["days_held"] >= HOLD_CAP_DAYS:
+                    close_pos(ticker, date, close_price, "time", records)
 
-            # ── Trend filter ──────────────────────────────────────
-            spy_trend = True  # use SPY close > SMA200
-            if not spy_trend:
-                if in_pos:
-                    records.append({"ticker": ticker, "date": str(date.date()),
-                                     "action": "exit_regime", "price": close.iloc[i],
-                                     "shares": shares, "pnl": 0})
-                    in_pos = False
-                continue
+        # ── Log equity after processing exits (before new entries) ──────────
+        equity_log.append({"date": str(date.date()), "equity": round(portfolio_equity, 2)})
 
-            # ── Entry signal (use prior bar for lag) ──────────────
-            if not in_pos and i > 0:
-                prev_sig = sig.iloc[i - 1] if i - 1 >= 0 else False
-                if prev_sig:
-                    entry_price = float(close.iloc[i])   # execute at today close
-                    stop_price  = atr_stop_price(entry_price, float(atr14.iloc[i]), ATR_MULT)
-                    risk        = capital * 0.005
-                    dist        = entry_price - stop_price
-                    if dist <= 0:
-                        continue
-                    shares = min(int(risk / dist), int(0.05 * capital / entry_price))
-                    if shares < 1:
-                        continue
+        # ── Entry signals ───────────────────────────────────────────────────
+        if len(open_pos) < MAX_POSITIONS:
+            for ticker, sig in signals.items():
+                if ticker in open_pos or ticker not in data:
+                    continue
+                if date not in data[ticker].index:
+                    continue
+                df_t = data[ticker]
+                i = df_t.index.get_loc(date)
 
-                    in_pos     = True
-                    entry_date = date
+                if i < 225:
+                    continue
+                if pd.isna(df_t["sma200"].iloc[i]) or pd.isna(df_t["atr14"].iloc[i]) or df_t["atr14"].iloc[i] == 0:
+                    continue
 
-            # ── Stop / time exit ─────────────────────────────────
-            elif in_pos:
-                days_held += 1
-                high_lag = high20.iloc[i - 1] if i > 0 else 0
-                exit_now = False
-                reason   = ""
+                # Trend filter
+                spy_close = data["SPY"]["close"].iloc[i]
+                spy_sma   = data["SPY"]["sma200"].iloc[i]
+                if pd.isna(spy_close) or pd.isna(spy_sma) or spy_close <= spy_sma:
+                    continue
 
-                if close.iloc[i] <= stop_price:
-                    exit_now = True; reason = "stop"
-                elif days_held >= HOLD_CAP_DAYS:
-                    exit_now = True; reason = "time"
+                # Entry on prior bar signal
+                if i < 1:
+                    continue
+                if not sig.iloc[i - 1]:
+                    continue
 
-                if exit_now:
-                    pnl = (close.iloc[i] - entry_price) * shares
-                    records.append({"ticker": ticker, "date": str(date.date()),
-                                     "action": "exit", "price": close.iloc[i],
-                                     "shares": shares, "pnl": pnl, "reason": reason})
-                    in_pos = False
+                entry_price = float(df_t["close"].iloc[i])
+                atr_val     = float(df_t["atr14"].iloc[i])
+                stop_price  = atr_stop_price(entry_price, atr_val, ATR_MULT)
+                dist        = entry_price - stop_price
+                if dist <= 0:
+                    continue
 
-    # Convert to DataFrame
+                risk_dollar = portfolio_equity * 0.005
+                shares      = min(int(risk_dollar / dist),
+                                   int(0.05 * portfolio_equity / entry_price))
+                if shares < 1:
+                    continue
+
+                open_pos[ticker] = {
+                    "entry_date": date,
+                    "entry_price": entry_price,
+                    "shares": shares,
+                    "stop_price": stop_price,
+                    "days_held": 0
+                }
+
+    # Force-close any open positions at end
+    for ticker, pos in list(open_pos.items()):
+        if ticker in data:
+            last_date = data[ticker].index[-1]
+            last_price = data[ticker]["close"].loc[last_date]
+            close_pos(ticker, last_date, last_price, "eof", records)
+        else:
+            del open_pos[ticker]
+
+    # ── Convert to DataFrames ───────────────────────────────────────────────────
     trades = pd.DataFrame(records) if records else pd.DataFrame(columns=[
-        "ticker","date","action","price","shares","pnl","reason"])
-    return trades
+        "ticker","date","action","price","shares","pnl","reason","equity_after"])
+    equity_curve = pd.DataFrame(equity_log) if equity_log else pd.DataFrame(columns=["date","equity"])
+    return trades, equity_curve
 
 
-def compute_metrics(trades_df, capital, start_date, end_date):
-    """Compute performance metrics from trades log."""
+def compute_metrics(trades_df, equity_curve, capital, start_date, end_date):
+    """Compute performance metrics from trades log and equity curve."""
     if trades_df.empty:
         return {}
 
@@ -181,6 +216,38 @@ def compute_metrics(trades_df, capital, start_date, end_date):
     avg_loss       = loss["pnl"].mean() if len(loss) else 0
     profit_factor  = abs(wins["pnl"].sum() / loss["pnl"].sum()) if loss["pnl"].sum() != 0 else float("inf")
 
+    # ── Max drawdown from equity curve ─────────────────────────────────────────
+    if not equity_curve.empty and "equity" in equity_curve.columns:
+        eq = equity_curve["equity"].values
+        peak = eq[0]
+        max_dd = 0.0
+        for v in eq:
+            if v > peak:
+                peak = v
+            dd = (peak - v) / peak if peak > 0 else 0
+            if dd > max_dd:
+                max_dd = dd
+        max_drawdown = round(max_dd, 4)
+    else:
+        max_drawdown = 0.0
+
+    # ── Sharpe ratio from equity curve ─────────────────────────────────────────
+    # Daily returns, annualize with sqrt(252), risk-free rate = 0
+    if not equity_curve.empty and "equity" in equity_curve.columns:
+        eq = equity_curve["equity"].values
+        if len(eq) > 1:
+            returns = np.diff(eq) / eq[:-1]
+            ret_mean = returns.mean()
+            ret_std  = returns.std()
+            if ret_std > 0:
+                sharpe = round(ret_mean / ret_std * np.sqrt(252), 4)
+            else:
+                sharpe = 0.0
+        else:
+            sharpe = 0.0
+    else:
+        sharpe = 0.0
+
     return {
         "total_return":     round(total_return, 2),
         "ann_return":       round(ann_return, 4),
@@ -190,8 +257,8 @@ def compute_metrics(trades_df, capital, start_date, end_date):
         "avg_win":          round(avg_win, 2),
         "avg_loss":         round(avg_loss, 2),
         "profit_factor":    round(profit_factor, 4),
-        "max_drawdown":     0.0,   # placeholder — use equity curve
-        "sharpe":           0.0,
+        "max_drawdown":     max_drawdown,
+        "sharpe":           sharpe,
         "start_date":       start_date,
         "end_date":         end_date,
     }
@@ -229,7 +296,7 @@ def main():
 
     # Run backtest
     print("\nRunning backtest...")
-    trades = run_backtest(data, signals, capital=args.capital)
+    trades, equity_curve = run_backtest(data, signals, capital=args.capital)
 
     if trades.empty:
         print("  No trades generated — check signal logic and indicator warmup.")
@@ -242,8 +309,12 @@ def main():
     trades.to_csv(trades_path, index=False)
     print(f"  Trades saved: {trades_path}")
 
+    equity_path = out_dir / "equity_vbt.csv"
+    equity_curve.to_csv(equity_path, index=False)
+    print(f"  Equity curve saved: {equity_path}")
+
     # Metrics
-    metrics = compute_metrics(trades, args.capital, args.start, args.end)
+    metrics = compute_metrics(trades, equity_curve, args.capital, args.start, args.end)
     metrics_path = out_dir / "metrics_vbt.json"
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
