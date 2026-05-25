@@ -1,1 +1,3 @@
-trade_id,date,ticker,setup,entry_price,stop_price,target_price,shares,position_dollar,planned_risk_dollar,exit_date,exit_price,PnL_dollar,R_multiple,rule_followed,mistake,notes,market_regime,VIX_level
+date,ticker,signal_type,entry_price,stop_price,target_price,shares,dollar_risk,pct_risk,exit_date,exit_price,pnl_dollars,pnl_pct,r_multiple,rule_followed,mistake,notes
+2024-01-15,SPY,breakout_20d,478.50,472.00,490.00,28,182.00,0.73%,,482.20,,+3.70,+0.78%,1.35,Y,,Note entry rationale
+2024-01-29,QQQ,breakout_20d,428.00,421.00,439.00,30,210.00,0.84%,,420.50,-225.00,-0.90%,-1.07,Y,stopped out early,Watch for earnings dates

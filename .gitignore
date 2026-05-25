@@ -1,0 +1,31 @@
+# Byte-compiled
+__pycache__/
+*.py[cod]
+*.pyc
+
+# venv / conda
+venv/
+.venv/
+env/
+.env
+
+# Data (raw and processed can be re-fetched)
+data/raw/
+data/processed/
+
+# Backtest results
+backtest/results/*.csv
+backtest/results/*.json
+reports/*.html
+
+# OS
+.DS_Store
+*.swp
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Credentials (NEVER commit these)
+.env
+*.pem
+*.key
