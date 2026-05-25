@@ -39,8 +39,9 @@ import yfinance as yf
 # Alpaca imports
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderSide, TimeInForce
-from alpaca.trading.requests import MarketOrderRequest, StopLossOrderRequest
-from alpaca.data.time_frame import TimeFrame
+from alpaca.trading.requests import MarketOrderRequest, StopLossRequest
+from alpaca.trading.enums import OrderClass
+from alpaca.data.timeframe import TimeFrame
 from alpaca.data.live import StockDataStream
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.enums import DataFeed
@@ -301,10 +302,22 @@ def generate_signals(data: dict[str, pd.DataFrame], trade_date: str) -> list[dic
 def _prev_trading_day(dates: pd.Index, current: str, offset: int = 1) -> Optional[str]:
     """Return the N-th previous trading day before current."""
     current_dt = pd.to_datetime(current)
+    # Normalize dates to Timestamp for comparison (handles string Index from yfinance pipeline)
+    if dates.dtype == object or not hasattr(dates, 'tz') or dates.tz is None:
+        try:
+            dates = pd.to_datetime(dates)
+        except Exception:
+            pass
+    if current_dt.tz is not None:
+        current_dt = current_dt.tz_localize(None)
     past = dates[dates < current_dt]
     if len(past) < offset:
         return None
-    return str(past[-offset])
+    result = past[-offset]
+    # Return as YYYY-MM-DD string to match string Index from yfinance pipeline
+    if hasattr(result, 'strftime'):
+        return result.strftime("%Y-%m-%d")
+    return str(result)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -382,25 +395,17 @@ def submit_entry(signal: dict, trade_date: str) -> bool:
     try:
         client = get_alpaca_client()
 
-        # Market buy order
+        # Bracket order: market buy + stop-loss in single request
         order = MarketOrderRequest(
             symbol=ticker,
             qty=shares,
             side=OrderSide.BUY,
             time_in_force=TimeInForce.DAY,
+            order_class=OrderClass.BRACKET,
+            stop_loss=StopLossRequest(stop_price=stop_price),
         )
         filled = client.submit_order(order)
         log.info("[ORDER] BUY %d shares %s @ market  (order_id=%s)", shares, ticker, filled.id)
-
-        # Submit linked stop-loss order
-        stop_order = StopLossOrderRequest(
-            symbol=ticker,
-            qty=shares,
-            stop_price=stop_price,
-            time_in_force=TimeInForce.DAY,
-        )
-        stop_filled = client.submit_order(stop_order)
-        log.info("[ORDER] STOP-LOSS %s @ $%.2f  (linked order_id=%s)", ticker, stop_price, stop_filled.id)
 
         # Log to journal
         log_trade({
