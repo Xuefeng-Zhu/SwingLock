@@ -129,9 +129,10 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
 # ─────────────────────────────────────────────────────────────────────────────
 # Data fetching
 # ─────────────────────────────────────────────────────────────────────────────
-def fetch_today_data(tickers: list[str], lookback: int = 250) -> dict[str, pd.DataFrame]:
+def fetch_today_data(tickers: list[str], lookback: int = 900) -> dict[str, pd.DataFrame]:
     """
     Fetch recent daily OHLCV for tickers via yfinance.
+    lookback=900 gives ~3.5 years — enough for SMA(200) to warm up and remain valid.
     Returns dict of {ticker: DataFrame} with date index.
     """
     result = {}
@@ -357,7 +358,7 @@ def get_open_positions() -> list[dict]:
     """Return list of open positions as dicts."""
     try:
         client = get_alpaca_client()
-        positions = client.list_positions()
+        positions = client.get_all_positions()
         return [
             {
                 "symbol": p.symbol,
