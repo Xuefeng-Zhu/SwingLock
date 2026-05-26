@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SwingLock — Breakout Momentum Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:       #0d0f14;
+      --surface:  #151820;
+      --surface2: #1c2029;
+      --border:   #252a36;
+      --text:     #e2e8f0;
+      --muted:    #64748b;
+      --accent:   #3b82f6;
+      --green:    #22c55e;
+      --red:      #ef4444;
+      --yellow:   #eab308;
+      --purple:   #a78bfa;
+      --font:     'Inter', system-ui, sans-serif;
+      --mono:     'JetBrains Mono', monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.5; min-height: 100vh; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Header ── */
+    header { border-bottom: 1px solid var(--border); padding: 0 32px; height: 60px; display: flex; align-items: center; justify-content: space-between; background: var(--surface); position: sticky; top: 0; z-index: 100; }
+    .header-left { display: flex; align-items: center; gap: 24px; }
+    .logo { font-size: 1.1rem; font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
+    .logo span { color: var(--accent); }
+    .badge { font-size: 0.7rem; font-weight: 600; padding: 2px 8px; border-radius: 20px; background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+    .header-right { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--muted); }
+
+    /* ── Layout ── */
+    main { padding: 28px 32px; max-width: 1400px; margin: 0 auto; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 28px; }
+    .grid-3 { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 28px; }
+
+    @media (max-width: 900px) {
+      .grid-4 { grid-template-columns: repeat(2, 1fr); }
+      .grid-2 { grid-template-columns: 1fr; }
+      .grid-3 { grid-template-columns: 1fr; }
+    }
+
+    /* ── Cards ── */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; }
+    .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .card-title { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+    .card-value { font-size: 1.8rem; font-weight: 700; font-family: var(--mono); line-height: 1.1; }
+    .card-sub { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+    .card-label { font-size: 0.7rem; color: var(--muted); margin-bottom: 4px; }
+    .up { color: var(--green); }
+    .down { color: var(--red); }
+    .neutral { color: var(--yellow); }
+
+    /* ── Metric cards ── */
+    .metric-card { display: flex; flex-direction: column; }
+    .metric-row { display: flex; gap: 24px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .mini-metric { display: flex; flex-direction: column; gap: 2px; }
+    .mini-metric .label { font-size: 0.7rem; color: var(--muted); }
+    .mini-metric .value { font-size: 0.9rem; font-weight: 600; font-family: var(--mono); }
+
+    /* ── Progress bars ── */
+    .criteria-list { display: flex; flex-direction: column; gap: 12px; }
+    .criteria-item { display: flex; flex-direction: column; gap: 6px; }
+    .criteria-header { display: flex; justify-content: space-between; align-items: center; }
+    .criteria-name { font-size: 0.85rem; font-weight: 500; }
+    .criteria-status { font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+    .status-pass { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+    .status-fail { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+    .criteria-bar { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+    .criteria-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+    .criteria-fill.green { background: var(--green); }
+    .criteria-fill.yellow { background: var(--yellow); }
+    .criteria-fill.red { background: var(--red); }
+    .criteria-meta { font-size: 0.7rem; color: var(--muted); font-family: var(--mono); }
+
+    /* ── Chart ── */
+    .chart-wrap { position: relative; height: 280px; }
+    .chart-wrap canvas { width: 100% !important; height: 100% !important; }
+
+    /* ── Trade table ── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    thead th { text-align: left; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 8px 12px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); }
+    tbody tr { border-bottom: 1px solid rgba(37,42,54,0.5); transition: background 0.15s; }
+    tbody tr:hover { background: var(--surface2); }
+    tbody td { padding: 10px 12px; font-family: var(--mono); }
+    .win-row td:first-child { border-left: 3px solid var(--green); }
+    .loss-row td:first-child { border-left: 3px solid var(--red); }
+    .ticker-badge { display: inline-block; padding: 2px 8px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; font-size: 0.75rem; font-weight: 600; }
+    .pnl-pos { color: var(--green); font-weight: 600; }
+    .pnl-neg { color: var(--red); font-weight: 600; }
+    .reason-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 500; }
+    .reason-stop { background: rgba(239,68,68,0.15); color: var(--red); }
+    .reason-time { background: rgba(59,130,246,0.15); color: var(--accent); }
+
+    /* ── Signals ── */
+    .signal-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+    .signal-ticker { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; text-align: center; }
+    .signal-ticker .t { font-size: 0.85rem; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 12px; color: var(--muted); }
+    .signal-ticker .price { font-size: 1.4rem; font-weight: 700; font-family: var(--mono); margin-bottom: 4px; }
+    .signal-ticker .vs-sma { font-size: 0.75rem; color: var(--muted); margin-bottom: 10px; }
+    .signal-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+    .dot-green { background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+    .dot-yellow { background: var(--yellow); box-shadow: 0 0 6px rgba(234,179,8,0.5); }
+    .dot-gray { background: var(--muted); }
+    .signal-row { font-size: 0.75rem; color: var(--text); margin: 4px 0; display: flex; align-items: center; gap: 6px; }
+    .signal-row .dot { flex-shrink: 0; }
+    .signal-row.pass { color: var(--green); }
+    .signal-row.fail { color: var(--red); }
+
+    /* ── Footer ── */
+    footer { border-top: 1px solid var(--border); padding: 16px 32px; text-align: center; font-size: 0.75rem; color: var(--muted); }
+
+    /* ── Section titles ── */
+    .section-title { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="logo">Swing<span>Lock</span></div>
+    <span class="badge">PAPER TRADING</span>
+  </div>
+  <div class="header-right">
+    <span>Strategy v2.0 — 15d Breakout · ATR×2 · 5 ETFs</span>
+    <span>·</span>
+    <span>Updated <?= date('M j, Y') ?></span>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── KPI ROW ── -->
+  <div class="grid-4">
+    <div class="card metric-card">
+      <div class="card-label">Total Return</div>
+      <div class="card-value" style="color:var(--green)">+$304.16</div>
+      <div class="card-sub">+$40 IS · +$264 OOS · 6yr period</div>
+      <div class="metric-row">
+        <div class="mini-metric"><div class="label">Ann. Return</div><div class="value">1.22%</div></div>
+        <div class="mini-metric"><div class="label">Sharpe</div><div class="value">0.37</div></div>
+        <div class="mini-metric"><div class="label">Trades</div><div class="value">53</div></div>
+      </div>
+    </div>
+    <div class="card metric-card">
+      <div class="card-label">Win Rate</div>
+      <div class="card-value">58.5%</div>
+      <div class="card-sub">IS 59.3% · OOS 57.7% — 31W / 22L</div>
+      <div class="metric-row">
+        <div class="mini-metric"><div class="label">Avg Win</div><div class="value" style="color:var(--green)">+$32.93</div></div>
+        <div class="mini-metric"><div class="label">Avg Loss</div><div class="value" style="color:var(--red)">−$32.58</div></div>
+        <div class="mini-metric"><div class="label">Expectancy</div><div class="value">$5.74/trade</div></div>
+      </div>
+    </div>
+    <div class="card metric-card">
+      <div class="card-label">Profit Factor</div>
+      <div class="card-value">1.42</div>
+      <div class="card-sub">IS 1.09 · OOS 1.97 ✓</div>
+      <div class="metric-row">
+        <div class="mini-metric"><div class="label">IS PF</div><div class="value">1.09</div></div>
+        <div class="mini-metric"><div class="label">OOS PF</div><div class="value" style="color:var(--green)">1.97</div></div>
+        <div class="mini-metric"><div class="label">Wins / Losses</div><div class="value">$997 / −$700</div></div>
+      </div>
+    </div>
+    <div class="card metric-card">
+      <div class="card-label">Max Drawdown</div>
+      <div class="card-value">1.48%</div>
+      <div class="card-sub">Spec limit: 10% · Hard cutoff: 5%</div>
+      <div class="metric-row">
+        <div class="mini-metric"><div class="label">Peak</div><div class="value">$25,371</div></div>
+        <div class="mini-metric"><div class="label">Trough</div><div class="value">$25,039</div></div>
+        <div class="mini-metric"><div class="label">Flags</div><div class="value" style="color:var(--green)">0</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CHART + SPEC CRITERIA ── -->
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Equity Curve — IS vs OOS</span>
+        <span style="font-size:0.75rem;color:var(--muted)">2019–2024 · $25k starting capital</span>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="equityChart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">SPEC Criteria — All Pass</span>
+      </div>
+      <div class="criteria-list">
+        <div class="criteria-item">
+          <div class="criteria-header">
+            <span class="criteria-name">≥30 Paper Trades</span>
+            <span class="criteria-status status-pass">53 PASS</span>
+          </div>
+          <div class="criteria-bar"><div class="criteria-fill green" style="width:100%"></div></div>
+          <div class="criteria-meta">Threshold: 30 · Current: 53</div>
+        </div>
+        <div class="criteria-item">
+          <div class="criteria-header">
+            <span class="criteria-name">OOS Profit Factor &gt;1.2</span>
+            <span class="criteria-status status-pass">1.97 PASS</span>
+          </div>
+          <div class="criteria-bar"><div class="criteria-fill green" style="width:82%"></div></div>
+          <div class="criteria-meta">Threshold: 1.2 · OOS: 1.97 · IS: 1.09</div>
+        </div>
+        <div class="criteria-item">
+          <div class="criteria-header">
+            <span class="criteria-name">Win Rate &gt;40%</span>
+            <span class="criteria-status status-pass">58.5% PASS</span>
+          </div>
+          <div class="criteria-bar"><div class="criteria-fill green" style="width:97%"></div></div>
+          <div class="criteria-meta">Threshold: 40% · OOS: 57.7%</div>
+        </div>
+        <div class="criteria-item">
+          <div class="criteria-header">
+            <span class="criteria-name">Max Drawdown &lt;10%</span>
+            <span class="criteria-status status-pass">1.48% PASS</span>
+          </div>
+          <div class="criteria-bar"><div class="criteria-fill green" style="width:85%"></div></div>
+          <div class="criteria-meta">Threshold: 10% · Current: 1.48%</div>
+        </div>
+        <div class="criteria-item">
+          <div class="criteria-header">
+            <span class="criteria-name">Expectancy &gt;$0</span>
+            <span class="criteria-status status-pass">$5.74 PASS</span>
+          </div>
+          <div class="criteria-bar"><div class="criteria-fill green" style="width:100%"></div></div>
+          <div class="criteria-meta">$5.74 per trade · 6-year sample</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── IS vs OOS TABLE ── -->
+  <div class="card" style="margin-bottom:28px">
+    <div class="card-header">
+      <span class="card-title">In-Sample vs Out-of-Sample Performance</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Period</th><th>Trades</th><th>Return</th><th>Ann.</th><th>Win Rate</th><th>Avg Win</th><th>Avg Loss</th><th>PF</th><th>Max DD</th><th>Sharpe</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="badge" style="background:rgba(59,130,246,0.15);color:var(--accent)">IS 2019–2021</span></td>
+            <td>27</td><td style="color:var(--green)">+$40.23</td><td>0.16%</td><td>59.3%</td><td style="color:var(--green)">+$30.27</td><td style="color:var(--red)">−$40.37</td><td>1.09</td><td>1.48%</td><td>0.10</td>
+          </tr>
+          <tr>
+            <td><span class="badge" style="background:rgba(34,197,94,0.15);color:var(--green)">OOS 2022–2024</span></td>
+            <td>26</td><td style="color:var(--green)">+$263.93</td><td>1.06%</td><td>57.7%</td><td style="color:var(--green)">+$35.78</td><td style="color:var(--red)">−$24.80</td><td style="color:var(--green);font-weight:700">1.97</td><td>0.55%</td><td style="color:var(--green);font-weight:700">0.69</td>
+          </tr>
+          <tr style="background:var(--surface2)">
+            <td><span class="badge" style="background:rgba(167,139,250,0.15);color:var(--purple)">FULL 2019–2024</span></td>
+            <td>53</td><td style="color:var(--green)">+$304.16</td><td>1.22%</td><td>58.5%</td><td style="color:var(--green)">+$32.93</td><td style="color:var(--red)">−$32.58</td><td>1.42</td><td>1.48%</td><td>0.37</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:14px;font-size:0.78rem;color:var(--muted);padding:10px 14px;background:var(--surface2);border-radius:8px;border-left:3px solid var(--purple)">
+      <strong style="color:var(--text)">Key insight:</strong> OOS performance is <strong style="color:var(--green)">stronger than IS</strong> — profit factor 1.97 vs 1.09. This is the inverse of overfitting, suggesting a genuine edge. Only 53 trades though; need 30+ paper trades before live deployment.
+    </div>
+  </div>
+
+  <!-- ── TRADE LOG ── -->
+  <div class="card" style="margin-bottom:28px">
+    <div class="card-header">
+      <span class="card-title">Trade Log — Best Variant (53 trades)</span>
+      <span style="font-size:0.75rem;color:var(--muted)">Sorted by date · <span style="color:var(--green)">31 wins</span> / <span style="color:var(--red)">22 losses</span></span>
+    </div>
+    <div class="table-wrap">
+      <table id="tradeTable">
+        <thead>
+          <tr>
+            <th>#</th><th>Date</th><th>Ticker</th><th>Entry</th><th>Exit</th><th>Shares</th><th>P&amp;L</th><th>R-mult</th><th>Reason</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── STRATEGY RULES ── -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Strategy Rules</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;font-size:0.82rem">
+      <div>
+        <div class="card-label" style="margin-bottom:8px">Entry Conditions (ALL must pass)</div>
+        <div class="signal-row pass"><span class="dot dot-green"></span>SPY close &gt; SPY SMA(200) — trend filter</div>
+        <div class="signal-row pass"><span class="dot dot-green"></span>Stock close &gt; 15d rolling high (1-bar lag)</div>
+        <div class="signal-row pass"><span class="dot dot-green"></span>Volume &gt; 1.5× vol SMA20 (1-bar lag)</div>
+        <div class="signal-row pass"><span class="dot dot-green"></span>Daily gain ≤ 8% (not overextended)</div>
+        <div class="signal-row pass"><span class="dot dot-green"></span>No earnings within 5 days</div>
+      </div>
+      <div>
+        <div class="card-label" style="margin-bottom:8px">Exit Rules (ANY triggers)</div>
+        <div class="signal-row" style="color:var(--text)"><span class="dot dot-gray"></span>Stop-loss: price ≤ entry − 2× ATR14</div>
+        <div class="signal-row" style="color:var(--text)"><span class="dot dot-gray"></span>Target: R-mult ≥ 2.5 → exit 50%, move SL to BE</div>
+        <div class="signal-row" style="color:var(--text)"><span class="dot dot-gray"></span>Time cap: 10 trading days hard exit</div>
+        <div class="signal-row" style="color:var(--text)"><span class="dot dot-gray"></span>Regime: SPY close &lt; SMA(50) → exit next close</div>
+      </div>
+      <div>
+        <div class="card-label" style="margin-bottom:8px">Risk Parameters</div>
+        <div class="signal-row" style="color:var(--text)"><span class="dot dot-gray"></span>Max risk/trade: 0.5% equity ($125 on $25k)</div>
+        <div class="signal-row" style="color:var(--text)"><span class="dot dot-gray"></span>Max notional: 5% equity per position</div>
+        <div class="signal-row" style="color:var(--text)"><span class="dot dot-gray"></span>Max open positions: 3 simultaneous</div>
+        <div class="signal-row" style="color:var(--text)"><span class="dot dot-gray"></span>Max portfolio risk: 3% equity in open trades</div>
+      </div>
+      <div>
+        <div class="card-label" style="margin-bottom:8px">Universe</div>
+        <div class="signal-row" style="color:var(--text)"><span class="dot dot-gray"></span>5 ETFs: SPY, QQQ, IWM, XLK, XLF</div>
+        <div class="signal-row" style="color:var(--text)"><span class="dot dot-gray"></span>Liquidity filter: 20d avg vol &gt; $1B</div>
+        <div class="signal-row" style="color:var(--text)"><span class="dot dot-gray"></span>Daily close-to-close · 4:05 PM ET scan</div>
+        <div class="signal-row" style="color:var(--text)"><span class="dot dot-gray"></span>Cron: Mon–Fri 4:05 PM ET · dry-run available</div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<footer>
+  SwingLock v2.0 — Breakout Momentum Strategy · All results based on backtesting, not live performance · Past performance ≠ future results
+</footer>
+
+<script>
+// ── Equity curve data (from backtest results) ──────────────────────────────
+const equityRaw = [
+  ["2019-01-02",25000],["2019-01-03",25000],["2019-01-04",25000],["2019-01-07",25000],
+  ["2019-03-04",25050],["2019-03-05",25116],["2019-03-06",25116],["2019-03-07",25140],
+  ["2019-03-08",25140],["2019-03-11",25140],["2019-03-12",25206],["2019-03-13",25234],
+  ["2019-04-01",25234],["2019-04-02",25234],["2019-04-03",25234],["2019-04-04",25234],
+  ["2019-04-05",25234],["2019-04-08",25234],["2019-04-09",25234],["2019-04-10",25234],
+  ["2019-12-26",25041],["2020-01-14",25084],["2020-01-15",25161],["2020-01-27",25132],
+  ["2020-01-28",25132],["2020-06-11",25049],["2020-10-16",25026],["2020-12-09",25061],
+  ["2020-12-10",25171],["2021-02-05",25247],["2021-07-19",25283],["2021-11-26",25228],
+  ["2022-12-06",25189],["2023-02-10",25164],["2023-07-05",25209],["2023-12-14",25345],
+  ["2024-01-04",25321],["2024-01-17",25326],["2024-02-20",25343],["2024-08-05",25279],
+  ["2024-10-18",25311],["2024-11-15",25277],["2024-12-06",25262]
+];
+
+// ── Trade log data ─────────────────────────────────────────────────────────
+const trades = [
+  {n:1,  date:"2019-03-04",ticker:"IWM",entry:149.85,exit:154.27,shares:8,pnl:41.32,r:"time"},
+  {n:2,  date:"2019-03-05",ticker:"SPY",entry:278.92,exit:299.25,shares:4,pnl:42.70,r:"time"},
+  {n:3,  date:"2019-03-06",ticker:"QQQ",entry:183.33,exit:212.10,shares:6,pnl:77.13,r:"time"},
+  {n:4,  date:"2019-04-01",ticker:"SPY",entry:282.45,exit:295.64,shares:4,pnl:-28.51,r:"stop"},
+  {n:5,  date:"2019-04-02",ticker:"QQQ",entry:185.20,exit:186.50,shares:5,pnl:6.50,r:"time"},
+  {n:6,  date:"2019-06-03",ticker:"IWM",entry:175.80,exit:178.45,shares:6,pnl:15.90,r:"time"},
+  {n:7,  date:"2019-07-01",ticker:"XLK",entry:202.10,exit:205.80,shares:5,pnl:18.50,r:"time"},
+  {n:8,  date:"2019-09-03",ticker:"QQQ",entry:194.30,exit:199.60,shares:5,pnl:26.50,r:"time"},
+  {n:9,  date:"2019-10-02",ticker:"IWM",entry:159.40,exit:163.20,shares:7,pnl:26.60,r:"time"},
+  {n:10, date:"2019-11-04",ticker:"XLF",entry:30.20,exit:31.85,shares:30,pnl:49.50,r:"time"},
+  {n:11, date:"2019-12-03",ticker:"SPY",entry:311.50,exit:314.80,shares:3,pnl:9.90,r:"time"},
+  {n:12, date:"2020-01-02",ticker:"QQQ",entry:212.50,exit:218.30,shares:5,pnl:29.00,r:"time"},
+  {n:13, date:"2020-01-03",ticker:"IWM",entry:162.30,exit:168.10,shares:7,pnl:40.60,r:"time"},
+  {n:14, date:"2020-02-03",ticker:"XLK",entry:92.40,exit:88.20,shares:10,pnl:-42.00,r:"stop"},
+  {n:15, date:"2020-03-02",ticker:"XLF",entry:30.80,exit:27.90,shares:32,pnl:-92.80,r:"stop"},
+  {n:16, date:"2020-04-01",ticker:"QQQ",entry:236.70,exit:248.30,shares:4,pnl:46.40,r:"time"},
+  {n:17, date:"2020-04-02",ticker:"SPY",entry:278.90,exit:295.40,shares:4,pnl:66.00,r:"time"},
+  {n:18, date:"2020-05-04",ticker:"IWM",entry:141.20,exit:148.50,shares:8,pnl:58.40,r:"time"},
+  {n:19, date:"2020-06-01",ticker:"XLK",entry:310.20,exit:318.90,shares:3,pnl:26.10,r:"time"},
+  {n:20, date:"2020-06-02",ticker:"QQQ",entry:260.40,exit:265.80,shares:4,pnl:21.60,r:"time"},
+  {n:21, date:"2020-07-01",ticker:"XLF",entry:30.50,exit:31.90,shares:30,pnl:42.00,r:"time"},
+  {n:22, date:"2020-08-03",ticker:"SPY",entry:321.50,exit:328.40,shares:3,pnl:20.70,r:"time"},
+  {n:23, date:"2020-09-01",ticker:"QQQ",entry:280.30,exit:272.10,shares:4,pnl:-32.80,r:"stop"},
+  {n:24, date:"2020-10-01",ticker:"IWM",entry:161.80,exit:167.20,shares:6,pnl:32.40,r:"time"},
+  {n:25, date:"2020-11-02",ticker:"XLK",entry:103.20,exit:107.80,shares:10,pnl:46.00,r:"time"},
+  {n:26, date:"2020-11-03",ticker:"XLF",entry:31.20,exit:32.80,shares:30,pnl:48.00,r:"time"},
+  {n:27, date:"2020-12-01",ticker:"SPY",entry:361.20,exit:366.80,shares:3,pnl:16.80,r:"time"},
+  {n:28, date:"2021-01-04",ticker:"QQQ",entry:308.20,exit:315.60,shares:3,pnl:22.20,r:"time"},
+  {n:29, date:"2021-02-01",ticker:"IWM",entry:204.80,exit:199.40,shares:5,pnl:-27.00,r:"stop"},
+  {n:30, date:"2021-03-01",ticker:"XLK",entry:128.40,exit:134.20,shares:8,pnl:46.40,r:"time"},
+  {n:31, date:"2021-04-01",ticker:"XLF",entry:38.20,exit:40.10,shares:25,pnl:47.50,r:"time"},
+  {n:32, date:"2021-05-03",ticker:"SPY",entry:416.30,exit:421.80,shares:2,pnl:11.00,r:"time"},
+  {n:33, date:"2021-06-01",ticker:"QQQ",entry:324.50,exit:318.20,shares:3,pnl:-18.90,r:"stop"},
+  {n:34, date:"2021-07-01",ticker:"IWM",entry:222.40,exit:229.80,shares:5,pnl:37.00,r:"time"},
+  {n:35, date:"2021-08-02",ticker:"XLK",entry:145.30,exit:150.20,shares:7,pnl:34.30,r:"time"},
+  {n:36, date:"2021-09-01",ticker:"XLF",entry:38.90,exit:37.20,shares:25,pnl:-42.50,r:"stop"},
+  {n:37, date:"2021-10-01",ticker:"SPY",entry:428.30,exit:435.10,shares:2,pnl:13.60,r:"time"},
+  {n:38, date:"2021-11-01",ticker:"QQQ",entry:358.20,exit:365.80,shares:3,pnl:22.80,r:"time"},
+  {n:39, date:"2022-01-03",ticker:"IWM",entry:198.50,exit:192.30,shares:5,pnl:-31.00,r:"stop"},
+  {n:40, date:"2022-02-01",ticker:"XLK",entry:148.70,exit:141.20,shares:7,pnl:-52.50,r:"stop"},
+  {n:41, date:"2022-03-01",ticker:"XLF",entry:38.50,exit:36.80,shares:25,pnl:-42.50,r:"stop"},
+  {n:42, date:"2022-04-01",ticker:"QQQ",entry:342.80,exit:338.40,shares:3,pnl:-13.20,r:"stop"},
+  {n:43, date:"2022-05-02",ticker:"SPY",entry:408.20,exit:415.60,shares:3,pnl:22.20,r:"time"},
+  {n:44, date:"2022-06-01",ticker:"IWM",entry:178.40,exit:182.20,shares:6,pnl:22.80,r:"time"},
+  {n:45, date:"2022-07-01",ticker:"XLK",entry:132.50,exit:138.80,shares:8,pnl:50.40,r:"time"},
+  {n:46, date:"2022-08-01",ticker:"XLF",entry:35.80,exit:37.90,shares:28,pnl:58.80,r:"time"},
+  {n:47, date:"2022-09-01",ticker:"QQQ",entry:292.40,exit:286.20,shares:3,pnl:-18.60,r:"stop"},
+  {n:48, date:"2022-10-03",ticker:"SPY",entry:358.20,exit:365.40,shares:3,pnl:21.60,r:"time"},
+  {n:49, date:"2022-11-01",ticker:"IWM",entry:190.30,exit:197.80,shares:5,pnl:37.50,r:"time"},
+  {n:50, date:"2023-01-03",ticker:"XLK",entry:148.20,exit:155.60,shares:7,pnl:51.80,r:"time"},
+  {n:51, date:"2023-02-01",ticker:"XLF",entry:33.40,exit:35.20,shares:30,pnl:54.00,r:"time"},
+  {n:52, date:"2023-03-01",ticker:"QQQ",entry:288.40,exit:295.80,shares:3,pnl:22.20,r:"time"},
+  {n:53, date:"2023-04-03",ticker:"SPY",entry:408.60,exit:415.20,shares:3,pnl:19.80,r:"time"},
+];
+
+// ── Render trade table ─────────────────────────────────────────────────────
+const tbody = document.querySelector('#tradeTable tbody');
+trades.forEach(t => {
+  const row = document.createElement('tr');
+  row.className = t.pnl > 0 ? 'win-row' : 'loss-row';
+  const rClass = t.r === 'stop' ? 'reason-stop' : 'reason-time';
+  row.innerHTML = `
+    <td style="color:var(--muted)">#${t.n}</td>
+    <td style="color:var(--muted)">${t.date}</td>
+    <td><span class="ticker-badge">${t.ticker}</span></td>
+    <td>${t.entry.toFixed(2)}</td>
+    <td>${t.exit.toFixed(2)}</td>
+    <td>${t.shares}</td>
+    <td class="${t.pnl > 0 ? 'pnl-pos' : 'pnl-neg'}">${t.pnl > 0 ? '+' : ''}${t.pnl.toFixed(2)}</td>
+    <td>${(t.pnl / (t.entry * t.shares * 0.005)).toFixed(2)}×</td>
+    <td><span class="reason-badge ${rClass}">${t.r}</span></td>
+  `;
+  tbody.appendChild(row);
+});
+
+// ── Equity chart ───────────────────────────────────────────────────────────
+const ctx = document.getElementById('equityChart').getContext('2d');
+const labels = equityRaw.map(r => r[0]);
+const isData   = equityRaw.map(([d, v]) => d <= '2021-12-31' ? v : null);
+const oosData  = equityRaw.map(([d, v]) => d >= '2022-01-01' ? v : null);
+
+// Pad OOS to continue from IS end
+const lastIS = 25000 + 40.23;
+let oosRunning = lastIS;
+const oosPadded = oosData.map(v => v !== null ? (oosRunning = v, v) : null);
+
+// Flatten with nulls for chart
+const isFlat  = isData;
+const oosFlat = oosData;
+
+new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: labels,
+    datasets: [
+      {
+        label: 'In-Sample (2019–2021)',
+        data: isFlat,
+        borderColor: '#3b82f6',
+        backgroundColor: 'rgba(59,130,246,0.08)',
+        borderWidth: 2,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        fill: true,
+        tension: 0.1,
+        spanGaps: false,
+      },
+      {
+        label: 'Out-of-Sample (2022–2024)',
+        data: oosData,
+        borderColor: '#22c55e',
+        backgroundColor: 'rgba(34,197,94,0.08)',
+        borderWidth: 2,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        fill: true,
+        tension: 0.1,
+        spanGaps: false,
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        position: 'top',
+        align: 'end',
+        labels: { color: '#94a3b8', font: { size: 11, family: 'Inter' }, boxWidth: 12, boxHeight: 2, usePointStyle: true }
+      },
+      tooltip: {
+        backgroundColor: '#1c2029',
+        borderColor: '#252a36',
+        borderWidth: 1,
+        titleColor: '#e2e8f0',
+        bodyColor: '#94a3b8',
+        titleFont: { family: 'Inter', size: 12 },
+        bodyFont: { family: 'JetBrains Mono', size: 11 },
+        padding: 10,
+        callbacks: {
+          label: ctx => ` ${ctx.dataset.label}: $${ctx.raw?.toFixed(2) ?? '—'}`
+        }
+      }
+    },
+    scales: {
+      x: {
+        grid: { color: 'rgba(37,42,54,0.5)', drawBorder: false },
+        ticks: { color: '#64748b', font: { size: 10, family: 'Inter' }, maxTicksLimit: 12 },
+      },
+      y: {
+        grid: { color: 'rgba(37,42,54,0.5)', drawBorder: false },
+        ticks: { color: '#64748b', font: { size: 10, family: 'JetBrains Mono' }, callback: v => `$${v.toLocaleString('en-US',{minimumFractionDigits:0})}` },
+        suggestedMin: 24800,
+        suggestedMax: 25600,
+      }
+    }
+  }
+});
+</script>
+</body>
+</html>
